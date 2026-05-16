@@ -2,16 +2,20 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>robot_hardware</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="pi@todo.todo">pi</maintainer>
-  <license>TODO: License declaration</license>
+  <version>1.0.0</version>
+  <description>Hardware driver node for differential drive tracked robot.
+    Bridges Arduino Mega serial data into ROS 2.</description>
+  <maintainer email="user@todo.com">user</maintainer>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+
+  <exec_depend>python3-serial</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

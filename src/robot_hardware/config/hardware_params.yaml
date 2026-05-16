@@ -1,0 +1,27 @@
+# ============================================================
+# Hardware Driver Parameters
+# ============================================================
+
+hardware_driver:
+  ros__parameters:
+    # Serial
+    serial_port: "/dev/ttyUSB0"
+    baudrate: 115200
+    serial_timeout: 0.01          # seconds, read timeout per cycle
+
+    # Robot geometry
+    wheel_radius: 0.03            # meters
+    wheelbase: 0.22               # meters (track width)
+    encoder_ppr: 3960             # pulses per revolution (quad x4, output shaft)
+
+    # Limits
+    max_speed: 0.3                # m/s
+
+    # Frame IDs
+    odom_frame_id: "odom"
+    base_frame_id: "base_link"
+    imu_frame_id: "imu_link"
+
+    # Feature toggles
+    publish_tf: true              # broadcast odom -> base_link TF
+    cmd_vel_timeout: 1.0          # seconds, zero cmd_vel if no msg received
