@@ -1,0 +1,94 @@
+# ============================================================================
+# slam_toolbox — Online Async Mapping Configuration
+# Robot: Differential drive crawler | Max speed: 0.1 m/s
+# LiDAR: RPLiDAR C1M1 (10 Hz, 360°, 0.15–16 m)
+# Environment: Indoor workshop ~20×20 m
+# ============================================================================
+
+slam_toolbox:
+  ros__parameters:
+
+    # ── Plugin Configuration ────────────────────────────────────────────
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ── Mode ────────────────────────────────────────────────────────────
+    mode: mapping
+
+    # ── TF Frames ───────────────────────────────────────────────────────
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_link
+    scan_topic: /scan
+    use_map_saver: true
+
+    # ── Timing ──────────────────────────────────────────────────────────
+    map_update_interval: 2.0
+    transform_publish_period: 0.02
+    resolution: 0.05
+
+    # ── Laser Parameters ────────────────────────────────────────────────
+    max_laser_range: 12.0
+    minimum_time_interval: 0.2
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+
+    # ── Scan Matching / Travel Thresholds ───────────────────────────────
+    # Tuned for slow robot (0.1 m/s max):
+    #   - Small travel thresholds ensure frequent pose updates
+    #   - Keeps map consistent in tight indoor corridors
+    minimum_travel_distance: 0.03
+    minimum_travel_heading: 0.03
+    scan_buffer_size: 15
+    scan_buffer_maximum_scan_distance: 12.0
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+
+    # ── Loop Closure ────────────────────────────────────────────────────
+    do_loop_closing: true
+    loop_match_minimum_chain_size: 5
+    loop_match_maximum_variance_coarse: 0.5
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+    loop_search_maximum_distance: 3.0
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ── Correlation / Scan Matching Search ──────────────────────────────
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
+
+    # ── Fine Search ─────────────────────────────────────────────────────
+    fine_search_space_dimension: 0.5     # unused by async, kept for compat
+    fine_search_space_resolution: 0.01   # unused by async, kept for compat
+    fine_search_space_smear_deviation: 0.01  # unused by async, kept for compat
+
+    # ── Distance Variance / Angle Variance Penalty ──────────────────────
+    distance_variance_penalty: 0.3
+    angle_variance_penalty: 0.8
+
+    # ── Coarse Search ───────────────────────────────────────────────────
+    use_scan_matching: true
+    use_scan_barycenter: true
+    use_response_expansion: true
+
+    # ── Map Management ──────────────────────────────────────────────────
+    map_file_name: ""
+    map_start_pose: [0.0, 0.0, 0.0]
+    map_start_at_dock: true
+
+    # ── Debug ───────────────────────────────────────────────────────────
+    debug_logging: false
+    throttle_scans: 1
+
+    # ── Serialization ───────────────────────────────────────────────────
+    enable_interactive_mode: true
+
+    # ── Stack Size (bytes) ──────────────────────────────────────────────
+    stack_size_to_use: 40000000
