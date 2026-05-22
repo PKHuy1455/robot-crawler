@@ -5,6 +5,19 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
+        # Camera V2 node
+        Node(
+            package='v4l2_camera',
+            executable='v4l2_camera_node',
+            name='v4l2_camera',
+            output='screen',
+            parameters=[
+                {'video_device': '/dev/video0'},
+                {'image_size': [640, 480]},
+                {'pixel_format': 'YUYV'},
+            ]
+        ),
+        # Anomaly detector node
         Node(
             package='anomaly_detection',
             executable='anomaly_detector',
@@ -18,6 +31,7 @@ def generate_launch_description():
                 {'cooldown_sec': 3.0}
             ]
         ),
+        # Position bridge node
         Node(
             package='anomaly_detection',
             executable='position_bridge',

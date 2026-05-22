@@ -1,3 +1,4 @@
+
 import os
 
 from ament_index_python.packages import get_package_share_directory
@@ -77,7 +78,7 @@ def generate_launch_description():
         name='rplidar_composition',
         output='screen',
         parameters=[{
-            'serial_port': '/dev/ttyUSB2',
+            'serial_port': '/dev/ttyUSB1',
             'serial_baudrate': 460800,
             'frame_id': 'laser',
             'angle_compensate': True,
