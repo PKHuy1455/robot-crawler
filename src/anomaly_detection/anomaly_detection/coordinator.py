@@ -5,29 +5,25 @@ from geometry_msgs.msg import Twist
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Duration
 import json
-import time
+import threading
 
 class AnomalyCoordinator(Node):
     def __init__(self):
         super().__init__('anomaly_coordinator')
 
-        # State
         self.is_paused = False
         self.marker_id = 0
+        self._lock = threading.Lock()
 
-        # Subscribe /anomaly từ anomaly_detector
         self.sub_anomaly = self.create_subscription(
             String, '/anomaly', self.anomaly_callback, 10)
 
-        # Publisher pause/resume explore_lite
         self.pub_explore_resume = self.create_publisher(
             Bool, '/explore/resume', 10)
 
-        # Publisher dừng robot khẩn cấp
         self.pub_cmd_vel = self.create_publisher(
             Twist, '/cmd_vel', 10)
 
-        # Publisher marker đỏ lên RViz2
         self.pub_marker = self.create_publisher(
             MarkerArray, '/anomaly_markers', 10)
 
@@ -36,28 +32,23 @@ class AnomalyCoordinator(Node):
         self.get_logger().info('Anomaly Coordinator started!')
 
     def stop_robot(self):
-        """Dừng robot ngay lập tức."""
         twist = Twist()
-        twist.linear.x = 0.0
-        twist.angular.z = 0.0
         self.pub_cmd_vel.publish(twist)
 
     def pause_exploration(self):
-        """Pause explore_lite."""
         msg = Bool()
         msg.data = False
         self.pub_explore_resume.publish(msg)
         self.get_logger().info('Exploration PAUSED')
 
     def resume_exploration(self):
-        """Resume explore_lite."""
         msg = Bool()
         msg.data = True
         self.pub_explore_resume.publish(msg)
         self.get_logger().info('Exploration RESUMED')
 
     def add_marker(self, x, y, anomaly_id, crack_count):
-        """Thêm marker đỏ vào map tại vị trí bất thường."""
+        # Cylinder marker đỏ
         marker = Marker()
         marker.header.frame_id = 'map'
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -65,32 +56,22 @@ class AnomalyCoordinator(Node):
         marker.id = self.marker_id
         marker.type = Marker.CYLINDER
         marker.action = Marker.ADD
-
-        # Vị trí
         marker.pose.position.x = x
         marker.pose.position.y = y
         marker.pose.position.z = 0.1
         marker.pose.orientation.w = 1.0
-
-        # Kích thước
         marker.scale.x = 0.3
         marker.scale.y = 0.3
         marker.scale.z = 0.2
-
-        # Màu đỏ
         marker.color.r = 1.0
         marker.color.g = 0.0
         marker.color.b = 0.0
         marker.color.a = 0.9
-
-        # Tồn tại mãi mãi
         marker.lifetime = Duration(sec=0, nanosec=0)
-
         self.marker_array.markers.append(marker)
-        self.pub_marker.publish(self.marker_array)
         self.marker_id += 1
 
-        # Text marker hiển thị số vết nứt
+        # Text marker vàng
         text_marker = Marker()
         text_marker.header.frame_id = 'map'
         text_marker.header.stamp = self.get_clock().now().to_msg()
@@ -107,52 +88,52 @@ class AnomalyCoordinator(Node):
         text_marker.color.g = 1.0
         text_marker.color.b = 0.0
         text_marker.color.a = 1.0
-        text_marker.text = f'#{anomaly_id[-4:]} cracks:{crack_count}'
+        text_marker.text = f'crack:{crack_count} ({x:.1f},{y:.1f})'
         text_marker.lifetime = Duration(sec=0, nanosec=0)
-
         self.marker_array.markers.append(text_marker)
-        self.pub_marker.publish(self.marker_array)
         self.marker_id += 1
 
-    def anomaly_callback(self, msg: String):
-        """Xử lý khi phát hiện bất thường."""
-        if self.is_paused:
-            return
+        self.pub_marker.publish(self.marker_array)
 
-        try:
-            data = json.loads(msg.data)
-        except Exception as e:
-            self.get_logger().error(f'Failed to parse anomaly: {e}')
-            return
+    def _handle_anomaly(self, data):
+        """Chạy trong thread riêng để không block spin."""
+        with self._lock:
+            if self.is_paused:
+                return
+            self.is_paused = True
 
         x = data.get('x', 0.0)
         y = data.get('y', 0.0)
         crack_count = data.get('crack_count', 0)
         anomaly_id = data.get('id', '0000')
-        timestamp = data.get('timestamp', '')
 
         self.get_logger().warn(
-            f'⚠️  ANOMALY! pos=({x:.2f},{y:.2f}) '
-            f'cracks={crack_count} id={anomaly_id[-8:]}'
-        )
+            f'⚠️  ANOMALY! pos=({x:.2f},{y:.2f}) cracks={crack_count}')
 
-        # 1. Pause exploration
-        self.is_paused = True
         self.pause_exploration()
-
-        # 2. Dừng robot
         self.stop_robot()
-
-        # 3. Thêm marker đỏ lên map
         self.add_marker(x, y, anomaly_id, crack_count)
 
-        # 4. Chờ 3 giây (robot dừng để chụp ảnh rõ)
-        self.get_logger().info('Robot stopped for 3 seconds...')
+        # Chờ 3 giây không block spin
+        import time
         time.sleep(3.0)
 
-        # 5. Resume exploration
-        self.is_paused = False
         self.resume_exploration()
+
+        with self._lock:
+            self.is_paused = False
+
+    def anomaly_callback(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception as e:
+            self.get_logger().error(f'Parse error: {e}')
+            return
+
+        # Chạy trong thread riêng
+        t = threading.Thread(target=self._handle_anomaly, args=(data,))
+        t.daemon = True
+        t.start()
 
 def main(args=None):
     rclpy.init(args=args)
