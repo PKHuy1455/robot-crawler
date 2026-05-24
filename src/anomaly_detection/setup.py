@@ -27,6 +27,7 @@ setup(
         'console_scripts': [
             'anomaly_detector = anomaly_detection.anomaly_detector:main',
             'position_bridge = anomaly_detection.position_bridge:main',
+            'coordinator = anomaly_detection.coordinator:main',
         ],
     },
 )
