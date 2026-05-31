@@ -70,21 +70,18 @@ def generate_launch_description():
         }]
     )
 
-    # 6. Anomaly detector
+    # 6. Anomaly detector — YOLOv8n (thay thế Canny)
     anomaly_detector = Node(
         package='anomaly_detection',
         executable='anomaly_detector',
         name='anomaly_detector',
         output='screen',
         parameters=[{
-            'canny_threshold1': 100,
-            'canny_threshold2': 250,
-            'min_crack_area': 1000,
-            'min_crack_length': 80,
-            'max_crack_aspect_ratio': 0.2,
-            'blur_kernel': 7,
-            'cooldown_sec': 10.0,
-            'min_valid_contours': 3,
+            'model_path':           '/home/pi/robot_ws/models/best.pt',
+            'confidence_threshold': 0.45,
+            'imgsz':                320,
+            'cooldown_sec':         5.0,
+            'save_dir':             '/home/pi/robot_data/anomalies',
         }]
     )
 
@@ -143,5 +140,5 @@ def generate_launch_description():
         anomaly_detector,
         position_bridge,
         coordinator,
-        explore,  # Delay 15 giây
+        explore,   # Delay 15 giây
     ])
