@@ -70,7 +70,7 @@ def generate_launch_description():
         }]
     )
 
-    # 6. Anomaly detector — YOLOv8n (thay thế Canny)
+    # 6. Anomaly detector
     anomaly_detector = Node(
         package='anomaly_detection',
         executable='anomaly_detector',
@@ -78,7 +78,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'model_path':           '/home/pi/robot_ws/models/best.pt',
-            'confidence_threshold': 0.45,
+            'confidence_threshold': 0.75,
             'imgsz':                320,
             'cooldown_sec':         5.0,
             'save_dir':             '/home/pi/robot_data/anomalies',
@@ -99,9 +99,12 @@ def generate_launch_description():
         executable='coordinator',
         name='anomaly_coordinator',
         output='screen',
+        parameters=[{
+            'save_dir': '/home/pi/robot_data/anomalies',
+        }]
     )
 
-    # 9. explore_lite — delay 15 giây chờ SLAM + Nav2 sẵn sàng
+    # 9. explore_lite — delay 15 giay cho SLAM + Nav2 san sang
     explore = TimerAction(
         period=15.0,
         actions=[
@@ -123,7 +126,7 @@ def generate_launch_description():
                     'gain_scale': 1.0,
                     'transform_tolerance': 0.5,
                     'min_frontier_size': 0.2,
-                    'return_to_init': False,
+                    'return_to_init': True,
                 }],
                 remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
             )
@@ -140,5 +143,5 @@ def generate_launch_description():
         anomaly_detector,
         position_bridge,
         coordinator,
-        explore,   # Delay 15 giây
+        explore,
     ])
