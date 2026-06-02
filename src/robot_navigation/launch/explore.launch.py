@@ -21,7 +21,7 @@ def generate_launch_description():
                 'gain_scale': 1.0,
                 'transform_tolerance': 0.5,
                 'min_frontier_size': 0.2,
-                'return_to_init': False,
+                'return_to_init': True,
             }],
             remappings=[
                 ('/tf', 'tf'),
