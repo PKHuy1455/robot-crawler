@@ -91,7 +91,8 @@ class AnomalyCoordinator(Node):
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = 'map'
-        goal.pose.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.header.stamp.sec = 0
+        goal.pose.header.stamp.nanosec = 0
         goal.pose.pose.position.x = 0.0
         goal.pose.pose.position.y = 0.0
         goal.pose.pose.orientation.w = 1.0
