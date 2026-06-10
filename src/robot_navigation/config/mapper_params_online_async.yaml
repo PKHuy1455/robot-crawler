@@ -41,8 +41,8 @@ slam_toolbox:
     # Tuned for slow robot (0.1 m/s max):
     #   - Small travel thresholds ensure frequent pose updates
     #   - Keeps map consistent in tight indoor corridors
-    minimum_travel_distance: 0.03
-    minimum_travel_heading: 0.03
+    minimum_travel_distance: 0.10
+    minimum_travel_heading: 0.15
     scan_buffer_size: 15
     scan_buffer_maximum_scan_distance: 12.0
     link_match_minimum_response_fine: 0.1
@@ -60,9 +60,9 @@ slam_toolbox:
     loop_search_space_smear_deviation: 0.03
 
     # ── Correlation / Scan Matching Search ──────────────────────────────
-    correlation_search_space_dimension: 0.5
+    correlation_search_space_dimension: 1.2
     correlation_search_space_resolution: 0.01
-    correlation_search_space_smear_deviation: 0.1
+    correlation_search_space_smear_deviation: 0.10
 
     # ── Fine Search ─────────────────────────────────────────────────────
     fine_search_space_dimension: 0.5     # unused by async, kept for compat
@@ -77,6 +77,9 @@ slam_toolbox:
     use_scan_matching: true
     use_scan_barycenter: true
     use_response_expansion: true
+    coarse_search_angle_offset: 1.0
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.5
 
     # ── Map Management ──────────────────────────────────────────────────
     map_file_name: ""

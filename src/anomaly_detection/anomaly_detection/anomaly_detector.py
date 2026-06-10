@@ -174,6 +174,8 @@ class AnomalyDetector(Node):
                 self._process_frame(msg)
             except Exception as exc:
                 self.get_logger().error(f'Inference error: {exc}')
+            # Gioi han inference toi da 2fps de giam tai CPU
+            time.sleep(0.5)
 
     def _process_frame(self, msg: Image):
         """Convert ROS Image → OpenCV → YOLO → handle detections."""

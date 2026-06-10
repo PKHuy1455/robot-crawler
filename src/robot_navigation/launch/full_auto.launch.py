@@ -65,8 +65,9 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'video_device': '/dev/video0',
-            'image_size': [640, 480],
+            'image_size': [320, 240],
             'pixel_format': 'YUYV',
+            'time_per_frame': [1, 5],
         }]
     )
 
@@ -79,8 +80,8 @@ def generate_launch_description():
         parameters=[{
             'model_path':           '/home/pi/robot_ws/models/best.pt',
             'confidence_threshold': 0.50,
-            'imgsz':                320,
-            'cooldown_sec':         5.0,
+            'imgsz':                256,
+            'cooldown_sec':         8.0,
             'save_dir':             '/home/pi/robot_data/anomalies',
         }]
     )
@@ -120,13 +121,13 @@ def generate_launch_description():
                     'costmap_updates_topic': '/global_costmap/costmap_updates',
                     'visualize': True,
                     'planner_frequency': 0.2,
-                    'progress_timeout': 120.0,
+                    'progress_timeout': 90.0,
                     'potential_scale': 3.0,
                     'orientation_scale': 0.0,
                     'gain_scale': 1.0,
                     'transform_tolerance': 0.5,
-                    'min_frontier_size': 0.2,
-                    'return_to_init': True,
+                    'min_frontier_size': 0.3,
+                    'return_to_init': False,
                 }],
                 remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
             )

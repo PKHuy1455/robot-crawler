@@ -270,9 +270,11 @@ class AnomalyCoordinator(Node):
             if self._returning_home or self._report_generated:
                 return
             self.get_logger().info(
-                'Exploration complete — navigating home...')
+                'Exploration complete — waiting 2.0s before navigating home...')
             self._last_resume_time = None
-            self._go_home()
+            t = threading.Timer(2.0, self._go_home)
+            t.daemon = True
+            t.start()
 
     # ------------------------------------------------------------------
     # Report
