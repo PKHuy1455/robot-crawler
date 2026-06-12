@@ -22,31 +22,41 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 1. Robot bringup
+    # 1. Robot bringup (hardware + LiDAR) — khởi động ngay
     robot_bringup = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(robot_bringup_dir, 'launch', 'robot_bringup.launch.py')),
     )
 
-    # 2. slam_toolbox async
-    slam_toolbox = Node(
-        package='slam_toolbox',
-        executable='async_slam_toolbox_node',
-        name='slam_toolbox',
-        output='screen',
-        parameters=[slam_params_file, {'use_sim_time': False}],
+    # 2. slam_toolbox — delay 5s chờ LiDAR spin up ổn định
+    slam_toolbox = TimerAction(
+        period=5.0,
+        actions=[
+            Node(
+                package='slam_toolbox',
+                executable='async_slam_toolbox_node',
+                name='slam_toolbox',
+                output='screen',
+                parameters=[slam_params_file, {'use_sim_time': False}],
+            )
+        ]
     )
 
-    # 3. Nav2
-    nav2_bringup = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(nav2_bringup_dir, 'launch', 'navigation_launch.py')),
-        launch_arguments={
-            'use_sim_time': 'false',
-            'params_file': nav2_params_file,
-            'autostart': 'true',
-            'use_composition': 'False',
-        }.items(),
+    # 3. Nav2 — delay 6s chờ SLAM khởi động trước
+    nav2_bringup = TimerAction(
+        period=6.0,
+        actions=[
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(nav2_bringup_dir, 'launch', 'navigation_launch.py')),
+                launch_arguments={
+                    'use_sim_time': 'false',
+                    'params_file': nav2_params_file,
+                    'autostart': 'true',
+                    'use_composition': 'False',
+                }.items(),
+            )
+        ]
     )
 
     # 4. cmd_vel relay
@@ -57,7 +67,7 @@ def generate_launch_description():
         arguments=['/cmd_vel_nav', '/cmd_vel'],
     )
 
-    # 5. Camera
+    # 5. Camera — 320x240, 5fps để giảm tải Pi
     camera = Node(
         package='v4l2_camera',
         executable='v4l2_camera_node',
@@ -65,12 +75,13 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'video_device': '/dev/video0',
-            'image_size': [640, 480],
+            'image_size': [320, 240],
             'pixel_format': 'YUYV',
+            'time_per_frame': [1, 5],
         }]
     )
 
-    # 6. Anomaly detector
+    # 6. Anomaly detector — YOLOv8n
     anomaly_detector = Node(
         package='anomaly_detection',
         executable='anomaly_detector',
@@ -78,9 +89,9 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'model_path':           '/home/pi/robot_ws/models/best.pt',
-            'confidence_threshold': 0.50,
-            'imgsz':                320,
-            'cooldown_sec':         5.0,
+            'confidence_threshold': 0.45,
+            'imgsz':                256,
+            'cooldown_sec':         15.0,
             'save_dir':             '/home/pi/robot_data/anomalies',
         }]
     )
@@ -104,9 +115,9 @@ def generate_launch_description():
         }]
     )
 
-    # 9. explore_lite — delay 15 giay cho SLAM + Nav2 san sang
+    # 9. explore_lite — delay 20s chờ SLAM + Nav2 sẵn sàng hoàn toàn
     explore = TimerAction(
-        period=15.0,
+        period=20.0,
         actions=[
             Node(
                 package='explore_lite',
@@ -119,13 +130,13 @@ def generate_launch_description():
                     'costmap_topic': '/global_costmap/costmap',
                     'costmap_updates_topic': '/global_costmap/costmap_updates',
                     'visualize': True,
-                    'planner_frequency': 0.2,
+                    'planner_frequency': 0.33,
                     'progress_timeout': 120.0,
-                    'potential_scale': 3.0,
+                    'potential_scale': 2.0,
                     'orientation_scale': 0.0,
-                    'gain_scale': 1.0,
+                    'gain_scale': 5.0,
                     'transform_tolerance': 0.5,
-                    'min_frontier_size': 0.2,
+                    'min_frontier_size': 0.25,
                     'return_to_init': True,
                 }],
                 remappings=[('/tf', 'tf'), ('/tf_static', 'tf_static')],
@@ -136,12 +147,12 @@ def generate_launch_description():
     return LaunchDescription([
         reset_serial,
         robot_bringup,
-        slam_toolbox,
-        nav2_bringup,
+        slam_toolbox,    # delay 5s
+        nav2_bringup,    # delay 6s
         cmd_vel_relay,
         camera,
         anomaly_detector,
         position_bridge,
         coordinator,
-        explore,
+        explore,         # delay 20s
     ])

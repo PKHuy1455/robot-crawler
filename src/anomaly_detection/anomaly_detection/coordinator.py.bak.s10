@@ -234,18 +234,6 @@ class AnomalyCoordinator(Node):
         crack_count = data.get('crack_count', 0)
         anomaly_id = data.get('id', '0000')
 
-        # Kiem tra trung lap: neu cach anomaly cu < 0.5m thi bo qua
-        MIN_DIST = 0.5
-        for prev in self.detected_anomalies:
-            dx = prev['x'] - x
-            dy = prev['y'] - y
-            if (dx*dx + dy*dy) < MIN_DIST * MIN_DIST:
-                self.get_logger().info(
-                    f'Duplicate skipped at ({x:.2f},{y:.2f})')
-                with self._lock:
-                    self.is_paused = False
-                return
-
         self.get_logger().warn(
             f'ANOMALY! pos=({x:.2f},{y:.2f}) cracks={crack_count}')
 

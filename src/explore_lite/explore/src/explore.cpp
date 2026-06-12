@@ -286,12 +286,13 @@ void Explore::makePlan()
   }
 
   // ensure only first call of makePlan was set resuming to true
+  bool was_resuming = resuming_;
   if (resuming_) {
     resuming_ = false;
   }
 
   // we don't need to do anything if we still pursuing the same goal
-  if (same_goal) {
+  if (same_goal && !was_resuming) {
     return;
   }
 
