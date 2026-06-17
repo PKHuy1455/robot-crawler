@@ -234,6 +234,9 @@ class AnomalyCoordinator(Node):
                 '❌ No waypoints set! Use RViz "Publish Point" first.')
             return
 
+        # Set state to NAVIGATING early to correct HOME marker label in RViz
+        self._state = "NAVIGATING"
+
         # Add home as the last waypoint
         self.waypoints.append((self._home_x, self._home_y))
 
