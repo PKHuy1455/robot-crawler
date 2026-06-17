@@ -32,8 +32,15 @@ Design notes
     (adds 'class' and 'confidence' fields; 'crack_count' kept for compat).
 """
 
-import json
 import os
+# Configure single-thread environment variables BEFORE importing torch or ultralytics
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
+
+import json
 import queue
 import threading
 import time
@@ -91,6 +98,14 @@ class AnomalyDetector(Node):
         self._model = None
         if _YOLO_AVAILABLE:
             self.get_logger().info(f'Loading YOLO model: {model_path}')
+            try:
+                # Limit PyTorch to 1 CPU thread to avoid CPU starvation for other nodes
+                import torch
+                torch.set_num_threads(1)
+                self.get_logger().info('✅ PyTorch threads limited to 1')
+            except Exception as e:
+                self.get_logger().warn(f'Could not limit PyTorch threads: {e}')
+
             try:
                 self._model = YOLO(model_path)
                 # Warmup: allocate model weights into memory now
@@ -174,7 +189,7 @@ class AnomalyDetector(Node):
                 self._process_frame(msg)
             except Exception as exc:
                 self.get_logger().error(f'Inference error: {exc}')
-            # Gioi han inference toi da 2fps de giam tai CPU
+            # Limit inference to 2 FPS (0.5s interval) to save CPU resources
             time.sleep(0.5)
 
     def _process_frame(self, msg: Image):

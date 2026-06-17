@@ -5,7 +5,7 @@
 hardware_driver:
   ros__parameters:
     # Serial
-    serial_port: "/dev/ttyUSB0"
+    serial_port: "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0"
     baudrate: 115200
     serial_timeout: 0.01          # seconds, read timeout per cycle
 

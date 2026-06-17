@@ -1,0 +1,16 @@
+==================================================
+     BÁO CÁO PHÁT HIỆN BẤT THƯỜNG - ROBOT CRAWLER  
+==================================================
+Thời gian tạo báo cáo: 2026-06-01 10:41:13
+Tổng số điểm bất thường phát hiện: 1
+
+Bất thường #1:
+  - Lớp (Class): crack
+  - Độ tin cậy (Confidence): 0.72
+  - Tọa độ (Pose): X = 1.250, Y = -0.820
+  - Thời điểm phát hiện: 20260601_104000
+  - Đường dẫn ảnh lưu: /home/huy/Desktop/robot-crawler/scratch/mock_image.jpg
+--------------------------------------------------
+
+==================================================
+Hành trình khám phá đã hoàn thành và robot đã quay về vị trí ban đầu.

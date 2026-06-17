@@ -1,16 +1,42 @@
+"""
+coordinator.py — Interactive Waypoint + Anomaly Coordinator
+=============================================================
+Mode: Static Map + AMCL + Interactive RViz Waypoint Selection
+
+Workflow (for defense demo):
+  1. Launch system → RViz shows the map
+  2. Operator uses RViz "Publish Point" tool to click waypoints on the map
+     → Each click adds a waypoint (shown as green marker on map)
+  3. Operator sends start signal:
+     ros2 topic pub /start_inspection std_msgs/String "data: start" --once
+  4. Robot autonomously navigates through ALL waypoints in order
+  5. At each waypoint: pause 3s for YOLO camera scan
+  6. If anomaly detected mid-transit: stop → mark red → resume
+  7. After all waypoints: return to origin (0,0) → generate report
+
+Topics:
+  Subscribed:
+    /clicked_point      (PointStamped)  — from RViz "Publish Point" tool
+    /start_inspection   (String)        — trigger to begin autonomous run
+    /anomaly            (String, JSON)  — from anomaly_detector
+  Published:
+    /cmd_vel            (Twist)         — emergency stop
+    /anomaly_markers    (MarkerArray)   — red cylinders for anomalies
+    /waypoint_markers   (MarkerArray)   — green spheres for planned waypoints
+"""
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool
-from geometry_msgs.msg import Twist, PoseStamped
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist, PoseStamped, PointStamped
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Duration
-from explore_lite_msgs.msg import ExploreStatus
-from rclpy.qos import QoSProfile, DurabilityPolicy
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 import json
+import math
 import threading
 import os
+import time
 from datetime import datetime
 
 
@@ -23,136 +49,338 @@ class AnomalyCoordinator(Node):
         self._lock = threading.Lock()
         self.detected_anomalies = []
         self._report_generated = False
-        self._returning_home = False
 
+        # ── Parameters ───────────────────────────────────────────────────
         self.declare_parameter('save_dir', '/home/pi/robot_data/anomalies')
         self._save_dir = self.get_parameter('save_dir').value
 
-        self.sub_anomaly = self.create_subscription(
+        # ── Waypoint collection ──────────────────────────────────────────
+        self.waypoints = []              # List of (x, y) tuples
+        self._current_wp_idx = 0
+        self._current_goal_handle = None
+        self._state = "COLLECTING"       # COLLECTING, NAVIGATING, WAITING, COMPLETED
+        self._home_x = 0.0
+        self._home_y = 0.0
+
+        # ── Publishers ───────────────────────────────────────────────────
+        self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.pub_anomaly_marker = self.create_publisher(
+            MarkerArray, '/anomaly_markers', 10)
+        self.pub_waypoint_marker = self.create_publisher(
+            MarkerArray, '/waypoint_markers', 10)
+
+        # ── Subscribers ──────────────────────────────────────────────────
+        # RViz "Publish Point" tool → collect waypoints
+        self.create_subscription(
+            PointStamped, '/clicked_point', self._clicked_point_cb, 10)
+        # Start trigger
+        self.create_subscription(
+            String, '/start_inspection', self._start_inspection_cb, 10)
+        # Anomaly alerts from YOLO detector
+        self.create_subscription(
             String, '/anomaly', self.anomaly_callback, 10)
 
-        status_qos = QoSProfile(
-            depth=10,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        self.sub_status = self.create_subscription(
-            ExploreStatus, '/explore/status',
-            self.status_callback, status_qos)
-
-        self.pub_explore_resume = self.create_publisher(
-            Bool, '/explore/resume', 10)
-        self.pub_cmd_vel = self.create_publisher(
-            Twist, '/cmd_vel', 10)
-        self.pub_marker = self.create_publisher(
-            MarkerArray, '/anomaly_markers', 10)
-
+        # ── Nav2 Action Client ───────────────────────────────────────────
         self._nav_client = ActionClient(
             self, NavigateToPose, 'navigate_to_pose')
 
-        self.marker_array = MarkerArray()
-        self._last_resume_time = None
-        self._watchdog_timer = self.create_timer(5.0, self._watchdog_callback)
+        self.anomaly_marker_array = MarkerArray()
+        self.waypoint_marker_array = MarkerArray()
 
-        self.get_logger().info('Anomaly Coordinator started!')
+        self.get_logger().info(
+            '═══════════════════════════════════════════════════')
+        self.get_logger().info(
+            '  🗺️  WAYPOINT COLLECTION MODE')
+        self.get_logger().info(
+            '  Use RViz "Publish Point" tool to click waypoints')
+        self.get_logger().info(
+            '  Then send: ros2 topic pub /start_inspection \\')
+        self.get_logger().info(
+            '    std_msgs/String "data: start" --once')
+        self.get_logger().info(
+            '═══════════════════════════════════════════════════')
 
     # ------------------------------------------------------------------
-    # Watchdog
+    # Waypoint collection from RViz
     # ------------------------------------------------------------------
 
-    def _watchdog_callback(self):
-        if self._report_generated:
-            return
-        if self._last_resume_time is None:
-            return
-        elapsed = (self.get_clock().now() -
-                   self._last_resume_time).nanoseconds / 1e9
-        if elapsed > 120.0:
+    def _clicked_point_cb(self, msg: PointStamped):
+        """Handle clicks from RViz 'Publish Point' tool."""
+        if self._state != "COLLECTING":
             self.get_logger().warn(
-                'Watchdog: explore stopped after resume. Returning home...')
-            self._last_resume_time = None
-            self._go_home()
-
-    # ------------------------------------------------------------------
-    # Navigate về (0,0)
-    # ------------------------------------------------------------------
-
-    def _go_home(self):
-        if self._returning_home or self._report_generated:
+                'Inspection already started. Ignoring new waypoint.')
             return
-        self._returning_home = True
-        self.get_logger().info('Navigating back to origin (0, 0)...')
 
-        if not self._nav_client.wait_for_server(timeout_sec=5.0):
+        x = msg.point.x
+        y = msg.point.y
+        self.waypoints.append((x, y))
+
+        # Show green marker on map
+        self._add_waypoint_marker(x, y, len(self.waypoints))
+
+        self.get_logger().info(
+            f'📌 Waypoint {len(self.waypoints)} added: ({x:.2f}, {y:.2f})')
+
+    def _add_waypoint_marker(self, x, y, wp_num):
+        """Add a green sphere marker for the waypoint on the map."""
+        # Sphere marker
+        marker = Marker()
+        marker.header.frame_id = 'map'
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = 'waypoints'
+        marker.id = wp_num * 2
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = x
+        marker.pose.position.y = y
+        marker.pose.position.z = 0.15
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 0.9
+        marker.lifetime = Duration(sec=0, nanosec=0)
+        self.waypoint_marker_array.markers.append(marker)
+
+        # Text label
+        text = Marker()
+        text.header.frame_id = 'map'
+        text.header.stamp = self.get_clock().now().to_msg()
+        text.ns = 'waypoint_labels'
+        text.id = wp_num * 2 + 1
+        text.type = Marker.TEXT_VIEW_FACING
+        text.action = Marker.ADD
+        text.pose.position.x = x
+        text.pose.position.y = y
+        text.pose.position.z = 0.4
+        text.pose.orientation.w = 1.0
+        text.scale.z = 0.15
+        text.color.r = 1.0
+        text.color.g = 1.0
+        text.color.b = 1.0
+        text.color.a = 1.0
+        text.text = f'WP{wp_num}'
+        text.lifetime = Duration(sec=0, nanosec=0)
+        self.waypoint_marker_array.markers.append(text)
+
+        self.pub_waypoint_marker.publish(self.waypoint_marker_array)
+
+    # ------------------------------------------------------------------
+    # Start inspection trigger
+    # ------------------------------------------------------------------
+
+    def _start_inspection_cb(self, msg: String):
+        """Triggered by: ros2 topic pub /start_inspection std_msgs/String ..."""
+        if self._state != "COLLECTING":
+            self.get_logger().warn('Inspection already running!')
+            return
+
+        if len(self.waypoints) == 0:
             self.get_logger().error(
-                'Nav2 action server not available! Generating report anyway.')
-            self._report_generated = True
-            self.generate_report()
+                '❌ No waypoints set! Use RViz "Publish Point" first.')
             return
+
+        # Add home as the last waypoint
+        self.waypoints.append((self._home_x, self._home_y))
+
+        self.get_logger().warn(
+            f'🚀 Starting inspection with {len(self.waypoints) - 1} '
+            f'waypoints + return home!')
+        for i, (x, y) in enumerate(self.waypoints):
+            label = "HOME" if i == len(self.waypoints) - 1 else f"WP{i+1}"
+            self.get_logger().info(f'  {label}: ({x:.2f}, {y:.2f})')
+
+        # Start navigation in a separate thread
+        threading.Thread(
+            target=self._begin_navigation, daemon=True).start()
+
+    def _begin_navigation(self):
+        """Wait for Nav2 then start waypoint sequence."""
+        self.get_logger().info('Waiting for Nav2 action server...')
+        while not self._nav_client.wait_for_server(timeout_sec=2.0):
+            self.get_logger().warn('Nav2 not ready, retrying...')
+            time.sleep(1.0)
+
+        self._state = "NAVIGATING"
+        self._current_wp_idx = 0
+        self.send_next_waypoint()
+
+    # ------------------------------------------------------------------
+    # Waypoint navigation
+    # ------------------------------------------------------------------
+
+    def send_next_waypoint(self):
+        if self._current_wp_idx >= len(self.waypoints):
+            self.get_logger().info('🎉 All waypoints completed!')
+            self._state = "COMPLETED"
+            return
+
+        wx, wy = self.waypoints[self._current_wp_idx]
+        is_home = (self._current_wp_idx == len(self.waypoints) - 1)
+        label = "HOME" if is_home else f"WP{self._current_wp_idx + 1}"
+
+        self.get_logger().info(
+            f'🎯 [{label}] Goal {self._current_wp_idx + 1}/'
+            f'{len(self.waypoints)}: ({wx:.2f}, {wy:.2f})')
 
         goal = NavigateToPose.Goal()
         goal.pose = PoseStamped()
         goal.pose.header.frame_id = 'map'
-        goal.pose.header.stamp.sec = 0
-        goal.pose.header.stamp.nanosec = 0
-        goal.pose.pose.position.x = 0.0
-        goal.pose.pose.position.y = 0.0
+        goal.pose.header.stamp = self.get_clock().now().to_msg()
+        goal.pose.pose.position.x = float(wx)
+        goal.pose.pose.position.y = float(wy)
         goal.pose.pose.orientation.w = 1.0
 
+        self._state = "NAVIGATING"
         future = self._nav_client.send_goal_async(goal)
         future.add_done_callback(self._goal_response_callback)
 
     def _goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
-            self.get_logger().error('Go home goal rejected!')
-            self._report_generated = True
-            self.generate_report()
+            self.get_logger().error(
+                f'Goal {self._current_wp_idx + 1} rejected! Retrying in 5s...')
+            t = threading.Thread(
+                target=self._retry_after_delay, args=(5.0,), daemon=True)
+            t.start()
             return
-        self.get_logger().info('Going home — goal accepted.')
+
+        self._current_goal_handle = goal_handle
+        self.get_logger().info(f'Goal {self._current_wp_idx + 1} accepted.')
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._goal_result_callback)
 
+    def _retry_after_delay(self, delay):
+        time.sleep(delay)
+        self.get_logger().info('Retrying waypoint goal...')
+        self.send_next_waypoint()
+
     def _goal_result_callback(self, future):
+        self._current_goal_handle = None
         try:
             result = future.result()
             status = result.status
-            if status == 4:
-                self.get_logger().info('Arrived at origin successfully!')
+
+            if status == 4:  # GOAL_SUCCEEDED
+                is_home = (self._current_wp_idx == len(self.waypoints) - 1)
+
+                if is_home:
+                    self.get_logger().info(
+                        '✅ Returned to origin successfully!')
+                    if not self._report_generated:
+                        self._report_generated = True
+                        self.generate_report()
+                    self._state = "COMPLETED"
+                    return
+
+                # Handle waypoint reach in a separate thread so we don't block the ROS2 executor
+                threading.Thread(target=self._handle_waypoint_reached, daemon=True).start()
+
+            elif status == 5:  # GOAL_CANCELED
+                self.get_logger().warn('Goal canceled (anomaly inspection).')
+
             else:
                 self.get_logger().warn(
-                    f'Go home status={status}, report anyway.')
+                    f'⚠️ Goal failed (status={status}). Retrying in 5s...')
+                # Retry in a separate thread to prevent blocking
+                threading.Thread(target=self._retry_failed_goal, daemon=True).start()
+
         except Exception as e:
             self.get_logger().error(f'Goal result error: {e}')
-        finally:
-            if not self._report_generated:
-                self._report_generated = True
-                self.generate_report()
+
+    def _handle_waypoint_reached(self):
+        self.get_logger().info(
+            f'✅ Reached WP{self._current_wp_idx + 1}! '
+            f'Scanning 3s...')
+        self._state = "WAITING"
+        time.sleep(3.0)
+
+        self._current_wp_idx += 1
+        self.send_next_waypoint()
+
+    def _retry_failed_goal(self):
+        time.sleep(5.0)
+        self.send_next_waypoint()
 
     # ------------------------------------------------------------------
-    # Robot control
+    # Anomaly handling
     # ------------------------------------------------------------------
+
+    def anomaly_callback(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except Exception as e:
+            self.get_logger().error(f'Parse error: {e}')
+            return
+        t = threading.Thread(
+            target=self._handle_anomaly, args=(data,), daemon=True)
+        t.start()
+
+    def _handle_anomaly(self, data):
+        with self._lock:
+            if self.is_paused:
+                return
+            self.is_paused = True
+
+        x = data.get('x', 0.0)
+        y = data.get('y', 0.0)
+        crack_count = data.get('crack_count', 0)
+        anomaly_id = data.get('id', '0000')
+
+        # Skip duplicates within 0.5m
+        for old in self.detected_anomalies:
+            dist = math.sqrt((x - old['x'])**2 + (y - old['y'])**2)
+            if dist < 0.5:
+                with self._lock:
+                    self.is_paused = False
+                return
+
+        self.get_logger().warn(
+            f'🚨 ANOMALY! pos=({x:.2f},{y:.2f}) cracks={crack_count}')
+
+        # 1. Cancel current goal
+        if self._current_goal_handle is not None:
+            try:
+                self._current_goal_handle.cancel_goal_async()
+            except Exception as e:
+                self.get_logger().error(f'Cancel error: {e}')
+
+        # 2. Stop robot
+        self.stop_robot()
+
+        # 3. Mark on map (red cylinder)
+        self._add_anomaly_marker(x, y, anomaly_id, crack_count)
+
+        self.detected_anomalies.append({
+            'id': anomaly_id, 'x': x, 'y': y,
+            'crack_count': crack_count,
+            'timestamp': data.get('timestamp', ''),
+            'class': data.get('class', 'crack'),
+            'confidence': data.get('confidence', 0.0),
+            'image': data.get('image', ''),
+        })
+
+        # 4. Pause 3s for inspection
+        time.sleep(3.0)
+
+        # 5. Resume
+        self.get_logger().info('Resuming navigation...')
+        with self._lock:
+            self.is_paused = False
+        self.send_next_waypoint()
 
     def stop_robot(self):
         twist = Twist()
         self.pub_cmd_vel.publish(twist)
 
-    def pause_exploration(self):
-        msg = Bool()
-        msg.data = False
-        self.pub_explore_resume.publish(msg)
-        self.get_logger().info('Exploration PAUSED')
-
-    def resume_exploration(self):
-        msg = Bool()
-        msg.data = True
-        self.pub_explore_resume.publish(msg)
-        self._last_resume_time = self.get_clock().now()
-        self.get_logger().info('Exploration RESUMED')
-
     # ------------------------------------------------------------------
-    # Marker
+    # Anomaly Markers (Red)
     # ------------------------------------------------------------------
 
-    def add_marker(self, x, y, anomaly_id, crack_count):
+    def _add_anomaly_marker(self, x, y, anomaly_id, crack_count):
         marker = Marker()
         marker.header.frame_id = 'map'
         marker.header.stamp = self.get_clock().now().to_msg()
@@ -172,109 +400,31 @@ class AnomalyCoordinator(Node):
         marker.color.b = 0.0
         marker.color.a = 0.9
         marker.lifetime = Duration(sec=0, nanosec=0)
-        self.marker_array.markers.append(marker)
+        self.anomaly_marker_array.markers.append(marker)
         self.marker_id += 1
 
-        text_marker = Marker()
-        text_marker.header.frame_id = 'map'
-        text_marker.header.stamp = self.get_clock().now().to_msg()
-        text_marker.ns = 'anomaly_labels'
-        text_marker.id = self.marker_id
-        text_marker.type = Marker.TEXT_VIEW_FACING
-        text_marker.action = Marker.ADD
-        text_marker.pose.position.x = x
-        text_marker.pose.position.y = y
-        text_marker.pose.position.z = 0.4
-        text_marker.pose.orientation.w = 1.0
-        text_marker.scale.z = 0.15
-        text_marker.color.r = 1.0
-        text_marker.color.g = 1.0
-        text_marker.color.b = 0.0
-        text_marker.color.a = 1.0
-        text_marker.text = f'#{len(self.detected_anomalies)} ({x:.1f},{y:.1f})'
-        text_marker.lifetime = Duration(sec=0, nanosec=0)
-        self.marker_array.markers.append(text_marker)
+        text = Marker()
+        text.header.frame_id = 'map'
+        text.header.stamp = self.get_clock().now().to_msg()
+        text.ns = 'anomaly_labels'
+        text.id = self.marker_id
+        text.type = Marker.TEXT_VIEW_FACING
+        text.action = Marker.ADD
+        text.pose.position.x = x
+        text.pose.position.y = y
+        text.pose.position.z = 0.4
+        text.pose.orientation.w = 1.0
+        text.scale.z = 0.15
+        text.color.r = 1.0
+        text.color.g = 1.0
+        text.color.b = 0.0
+        text.color.a = 1.0
+        text.text = f'⚠ #{len(self.detected_anomalies)+1} ({x:.1f},{y:.1f})'
+        text.lifetime = Duration(sec=0, nanosec=0)
+        self.anomaly_marker_array.markers.append(text)
         self.marker_id += 1
 
-        self.pub_marker.publish(self.marker_array)
-
-    # ------------------------------------------------------------------
-    # Anomaly handling
-    # ------------------------------------------------------------------
-
-    def _handle_anomaly(self, data):
-        with self._lock:
-            if self.is_paused:
-                return
-            self.is_paused = True
-
-        x = data.get('x', 0.0)
-        y = data.get('y', 0.0)
-        crack_count = data.get('crack_count', 0)
-        anomaly_id = data.get('id', '0000')
-
-        self.get_logger().warn(
-            f'ANOMALY! pos=({x:.2f},{y:.2f}) cracks={crack_count}')
-
-        self.pause_exploration()
-        self.stop_robot()
-        self.add_marker(x, y, anomaly_id, crack_count)
-
-        self.detected_anomalies.append({
-            'id':          anomaly_id,
-            'x':           x,
-            'y':           y,
-            'crack_count': crack_count,
-            'timestamp':   data.get('timestamp', ''),
-            'class':       data.get('class', 'crack'),
-            'confidence':  data.get('confidence', 0.0),
-            'image':       data.get('image', ''),
-        })
-
-        import time
-        time.sleep(3.0)
-
-        self.resume_exploration()
-
-        with self._lock:
-            self.is_paused = False
-
-    def anomaly_callback(self, msg: String):
-        if self._returning_home or self._report_generated:
-            return
-        try:
-            data = json.loads(msg.data)
-        except Exception as e:
-            self.get_logger().error(f'Parse error: {e}')
-            return
-        t = threading.Thread(target=self._handle_anomaly, args=(data,))
-        t.daemon = True
-        t.start()
-
-    # ------------------------------------------------------------------
-    # Explore status
-    # ------------------------------------------------------------------
-
-    def status_callback(self, msg: ExploreStatus):
-        status = msg.status
-        self.get_logger().info(f'Explore status: {status}')
-
-        if status == 'returned_to_origin':
-            if self._report_generated:
-                return
-            self._report_generated = True
-            self.get_logger().info('Returned to origin via explore_lite!')
-            self.generate_report()
-
-        elif status == 'exploration_complete':
-            if self._returning_home or self._report_generated:
-                return
-            self.get_logger().info(
-                'Exploration complete — waiting 2.0s before navigating home...')
-            self._last_resume_time = None
-            t = threading.Timer(2.0, self._go_home)
-            t.daemon = True
-            t.start()
+        self.pub_anomaly_marker.publish(self.anomaly_marker_array)
 
     # ------------------------------------------------------------------
     # Report
@@ -289,16 +439,20 @@ class AnomalyCoordinator(Node):
             f.write('=' * 50 + '\n')
             f.write('ROBOT INSPECTION FINAL REPORT\n')
             f.write(f'Generated: {ts}\n')
+            f.write(f'Waypoints inspected: {len(self.waypoints) - 1}\n')
             f.write('=' * 50 + '\n\n')
-            f.write(
-                f'Total anomalies detected: {len(self.detected_anomalies)}\n\n')
+            f.write(f'Waypoint route:\n')
+            for i, (wx, wy) in enumerate(self.waypoints):
+                label = "HOME" if i == len(self.waypoints)-1 else f"WP{i+1}"
+                f.write(f'  {label}: ({wx:.2f}, {wy:.2f})\n')
+            f.write(f'\nTotal anomalies: {len(self.detected_anomalies)}\n\n')
             for i, a in enumerate(self.detected_anomalies, 1):
                 f.write(f'[{i}] {a["class"]} (conf={a["confidence"]:.2f})\n')
                 f.write(f'    Position: ({a["x"]:.2f}, {a["y"]:.2f})\n')
                 f.write(f'    Cracks:   {a["crack_count"]}\n')
                 f.write(f'    Time:     {a["timestamp"]}\n')
                 f.write(f'    Image:    {a["image"]}\n\n')
-        self.get_logger().info(f'Report saved: {report_path}')
+        self.get_logger().info(f'📄 Report saved: {report_path}')
 
 
 def main(args=None):

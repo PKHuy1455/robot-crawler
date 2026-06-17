@@ -78,7 +78,7 @@ def generate_launch_description():
         name='rplidar_composition',
         output='screen',
         parameters=[{
-            'serial_port': '/dev/ttyUSB1',
+            'serial_port': '/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_b2ce7c4d786eef11b49ce8c2c169b110-if00-port0',
             'serial_baudrate': 460800,
             'frame_id': 'laser',
             'angle_compensate': True,
