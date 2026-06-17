@@ -27,7 +27,7 @@ Topics:
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
-from geometry_msgs.msg import Twist, PoseStamped, PointStamped
+from geometry_msgs.msg import Twist, PoseStamped, PointStamped, Point
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Duration
 from nav2_msgs.action import NavigateToPose
@@ -115,56 +115,107 @@ class AnomalyCoordinator(Node):
         y = msg.point.y
         self.waypoints.append((x, y))
 
-        # Show green marker on map
-        self._add_waypoint_marker(x, y, len(self.waypoints))
+        # Rebuild and show markers + connected path line
+        self._update_waypoint_markers()
 
         self.get_logger().info(
             f'📌 Waypoint {len(self.waypoints)} added: ({x:.2f}, {y:.2f})')
 
-    def _add_waypoint_marker(self, x, y, wp_num):
-        """Add a green sphere marker for the waypoint on the map."""
-        # Sphere marker
-        marker = Marker()
-        marker.header.frame_id = 'map'
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = 'waypoints'
-        marker.id = wp_num * 2
-        marker.type = Marker.SPHERE
-        marker.action = Marker.ADD
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = 0.15
-        marker.pose.orientation.w = 1.0
-        marker.scale.x = 0.2
-        marker.scale.y = 0.2
-        marker.scale.z = 0.2
-        marker.color.r = 0.0
-        marker.color.g = 1.0
-        marker.color.b = 0.0
-        marker.color.a = 0.9
-        marker.lifetime = Duration(sec=0, nanosec=0)
-        self.waypoint_marker_array.markers.append(marker)
+    def _update_waypoint_markers(self):
+        """Rebuild and publish the entire waypoint marker array (spheres, texts, and path line)."""
+        self.waypoint_marker_array.markers.clear()
 
-        # Text label
-        text = Marker()
-        text.header.frame_id = 'map'
-        text.header.stamp = self.get_clock().now().to_msg()
-        text.ns = 'waypoint_labels'
-        text.id = wp_num * 2 + 1
-        text.type = Marker.TEXT_VIEW_FACING
-        text.action = Marker.ADD
-        text.pose.position.x = x
-        text.pose.position.y = y
-        text.pose.position.z = 0.4
-        text.pose.orientation.w = 1.0
-        text.scale.z = 0.15
-        text.color.r = 1.0
-        text.color.g = 1.0
-        text.color.b = 1.0
-        text.color.a = 1.0
-        text.text = f'WP{wp_num}'
-        text.lifetime = Duration(sec=0, nanosec=0)
-        self.waypoint_marker_array.markers.append(text)
+        # 1. Add Sphere and Text for each waypoint
+        for i, wp in enumerate(self.waypoints):
+            # If inspection started, the last waypoint in the list is HOME (0, 0)
+            is_home = (i == len(self.waypoints) - 1 and self._state != "COLLECTING")
+            wp_num = i + 1
+            label = "HOME" if is_home else f"WP{wp_num}"
+
+            # Sphere marker (green for normal waypoints, orange for HOME return point)
+            marker = Marker()
+            marker.header.frame_id = 'map'
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = 'waypoints'
+            marker.id = wp_num * 2
+            marker.type = Marker.SPHERE
+            marker.action = Marker.ADD
+            marker.pose.position.x = wp[0]
+            marker.pose.position.y = wp[1]
+            marker.pose.position.z = 0.15
+            marker.pose.orientation.w = 1.0
+            marker.scale.x = 0.2
+            marker.scale.y = 0.2
+            marker.scale.z = 0.2
+            if is_home:
+                # Orange sphere for home return marker
+                marker.color.r = 1.0
+                marker.color.g = 0.5
+                marker.color.b = 0.0
+            else:
+                # Green sphere
+                marker.color.r = 0.0
+                marker.color.g = 1.0
+                marker.color.b = 0.0
+            marker.color.a = 0.9
+            marker.lifetime = Duration(sec=0, nanosec=0)
+            self.waypoint_marker_array.markers.append(marker)
+
+            # Text label
+            text = Marker()
+            text.header.frame_id = 'map'
+            text.header.stamp = self.get_clock().now().to_msg()
+            text.ns = 'waypoint_labels'
+            text.id = wp_num * 2 + 1
+            text.type = Marker.TEXT_VIEW_FACING
+            text.action = Marker.ADD
+            text.pose.position.x = wp[0]
+            text.pose.position.y = wp[1]
+            text.pose.position.z = 0.4
+            text.pose.orientation.w = 1.0
+            text.scale.z = 0.15
+            text.color.r = 1.0
+            text.color.g = 1.0
+            text.color.b = 1.0
+            text.color.a = 1.0
+            text.text = label
+            text.lifetime = Duration(sec=0, nanosec=0)
+            self.waypoint_marker_array.markers.append(text)
+
+        # 2. Add LINE_STRIP path connecting the waypoints
+        if len(self.waypoints) > 0:
+            line = Marker()
+            line.header.frame_id = 'map'
+            line.header.stamp = self.get_clock().now().to_msg()
+            line.ns = 'waypoint_path'
+            line.id = 9999
+            line.type = Marker.LINE_STRIP
+            line.action = Marker.ADD
+            line.pose.orientation.w = 1.0
+            line.scale.x = 0.04  # 4cm thickness
+            # Cyan/Blue color
+            line.color.r = 0.0
+            line.color.g = 0.8
+            line.color.b = 1.0
+            line.color.a = 0.7  # Semi-transparent
+            line.lifetime = Duration(sec=0, nanosec=0)
+
+            # Start from Home (0,0)
+            p_home = Point()
+            p_home.x = self._home_x
+            p_home.y = self._home_y
+            p_home.z = 0.05
+            line.points.append(p_home)
+
+            # Add all waypoints in order
+            for wp in self.waypoints:
+                p = Point()
+                p.x = wp[0]
+                p.y = wp[1]
+                p.z = 0.05
+                line.points.append(p)
+
+            self.waypoint_marker_array.markers.append(line)
 
         self.pub_waypoint_marker.publish(self.waypoint_marker_array)
 
@@ -185,6 +236,9 @@ class AnomalyCoordinator(Node):
 
         # Add home as the last waypoint
         self.waypoints.append((self._home_x, self._home_y))
+
+        # Rebuild and update markers (so LINE_STRIP connects back to HOME)
+        self._update_waypoint_markers()
 
         self.get_logger().warn(
             f'🚀 Starting inspection with {len(self.waypoints) - 1} '
