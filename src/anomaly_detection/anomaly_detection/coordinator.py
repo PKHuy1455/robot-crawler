@@ -367,18 +367,38 @@ class AnomalyCoordinator(Node):
             f'Starting active Pan-Tilt scan...')
         self._state = "WAITING"
 
-        # 1. Sweep to Left
-        self.get_logger().info('Scanning Left (Goc 143)...')
-        self.send_servo_cmd(143, 70)
-        time.sleep(1.2)  # Allow time to rotate and detect
+        # --- TẦNG 1: QUÉT SÀN (TILT_DOWN = 100) ---
+        self.get_logger().info('--- TẦNG 1: QUÉT SÀN (Tìm vết nứt) ---')
+        
+        self.get_logger().info('  [San] Quet giua-xuong (85, 100)...')
+        self.send_servo_cmd(85, 100)
+        time.sleep(1.0)
+        
+        self.get_logger().info('  [San] Quet trai-xuong (143, 100)...')
+        self.send_servo_cmd(143, 100)
+        time.sleep(1.2)
+        
+        self.get_logger().info('  [San] Quet phai-xuong (23, 100)...')
+        self.send_servo_cmd(23, 100)
+        time.sleep(1.2)
 
-        # 2. Sweep to Right
-        self.get_logger().info('Scanning Right (Goc 23)...')
+        # --- TẦNG 2: QUÉT KHÔNG GIAN/TƯỜNG (TILT_CENTER = 70) ---
+        self.get_logger().info('--- TẦNG 2: QUÉT KHÔNG GIAN (Tim vat can/di thuong) ---')
+        
+        self.get_logger().info('  [Khong gian] Quet giua-ngang (85, 70)...')
+        self.send_servo_cmd(85, 70)
+        time.sleep(1.0)
+        
+        self.get_logger().info('  [Khong gian] Quet trai-ngang (143, 70)...')
+        self.send_servo_cmd(143, 70)
+        time.sleep(1.2)
+        
+        self.get_logger().info('  [Khong gian] Quet phai-ngang (23, 70)...')
         self.send_servo_cmd(23, 70)
         time.sleep(1.2)
 
-        # 3. Return to Center
-        self.get_logger().info('Resetting camera to Center (Goc 85)...')
+        # --- ĐƯA VỀ VỊ TRÍ MẶC ĐỊNH ---
+        self.get_logger().info('Resetting camera to Center (85, 70)...')
         self.send_servo_cmd(85, 70)
         time.sleep(0.8)
 
