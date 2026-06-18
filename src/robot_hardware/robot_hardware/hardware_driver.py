@@ -23,6 +23,7 @@ import serial
 
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
+from std_msgs.msg import Int32MultiArray
 from geometry_msgs.msg import (
     Twist,
     TransformStamped,
@@ -119,6 +120,9 @@ class HardwareDriverNode(Node):
         self._cmd_vel_sub = self.create_subscription(
             Twist, '/cmd_vel', self._cmd_vel_callback, 10
         )
+        self._servo_sub = self.create_subscription(
+            Int32MultiArray, '/cmd_servo', self._servo_callback, 10
+        )
 
         # ── timer — 20 Hz read loop ─────────────────────────────────────
         self._timer = self.create_timer(0.05, self._timer_callback)
@@ -199,6 +203,17 @@ class HardwareDriverNode(Node):
         self._write_serial(cmd)
 
         self._last_cmd_vel_time = self.get_clock().now()
+
+    def _servo_callback(self, msg: Int32MultiArray):
+        """Relay Pan-Tilt angles to Arduino over serial: 'SERVO,pan,tilt\n'"""
+        if len(msg.data) >= 2:
+            pan = int(msg.data[0])
+            tilt = int(msg.data[1])
+            # Clamp angles
+            pan = max(0, min(180, pan))
+            tilt = max(0, min(180, tilt))
+            cmd = f'SERVO,{pan},{tilt}\n'
+            self._write_serial(cmd)
 
     # ─────────────────────────────────────────────────────────────────────
     # Timer callback — read serial & publish

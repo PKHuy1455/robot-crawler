@@ -26,7 +26,7 @@ Topics:
 """
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Int32MultiArray
 from geometry_msgs.msg import Twist, PoseStamped, PointStamped, Point
 from visualization_msgs.msg import Marker, MarkerArray
 from builtin_interfaces.msg import Duration
@@ -68,6 +68,8 @@ class AnomalyCoordinator(Node):
             MarkerArray, '/anomaly_markers', 10)
         self.pub_waypoint_marker = self.create_publisher(
             MarkerArray, '/waypoint_markers', 10)
+        self.pub_servo = self.create_publisher(
+            Int32MultiArray, '/cmd_servo', 10)
 
         # ── Subscribers ──────────────────────────────────────────────────
         # RViz "Publish Point" tool → collect waypoints
@@ -99,6 +101,12 @@ class AnomalyCoordinator(Node):
             '    std_msgs/String "data: start" --once')
         self.get_logger().info(
             '═══════════════════════════════════════════════════')
+
+    def send_servo_cmd(self, pan: int, tilt: int):
+        """Publish a command to rotate the camera Pan-Tilt."""
+        msg = Int32MultiArray()
+        msg.data = [int(pan), int(tilt)]
+        self.pub_servo.publish(msg)
 
     # ------------------------------------------------------------------
     # Waypoint collection from RViz
@@ -237,6 +245,9 @@ class AnomalyCoordinator(Node):
         # Set state to NAVIGATING early to correct HOME marker label in RViz
         self._state = "NAVIGATING"
 
+        # Center camera servo at start
+        self.send_servo_cmd(85, 70)
+
         # Add home as the last waypoint
         self.waypoints.append((self._home_x, self._home_y))
 
@@ -331,6 +342,8 @@ class AnomalyCoordinator(Node):
                         self._report_generated = True
                         self.generate_report()
                     self._state = "COMPLETED"
+                    # Reset camera to center on completion
+                    self.send_servo_cmd(85, 70)
                     return
 
                 # Handle waypoint reach in a separate thread so we don't block the ROS2 executor
@@ -351,10 +364,25 @@ class AnomalyCoordinator(Node):
     def _handle_waypoint_reached(self):
         self.get_logger().info(
             f'✅ Reached WP{self._current_wp_idx + 1}! '
-            f'Scanning 3s...')
+            f'Starting active Pan-Tilt scan...')
         self._state = "WAITING"
-        time.sleep(3.0)
 
+        # 1. Sweep to Left
+        self.get_logger().info('Scanning Left (Goc 143)...')
+        self.send_servo_cmd(143, 70)
+        time.sleep(1.2)  # Allow time to rotate and detect
+
+        # 2. Sweep to Right
+        self.get_logger().info('Scanning Right (Goc 23)...')
+        self.send_servo_cmd(23, 70)
+        time.sleep(1.2)
+
+        # 3. Return to Center
+        self.get_logger().info('Resetting camera to Center (Goc 85)...')
+        self.send_servo_cmd(85, 70)
+        time.sleep(0.8)
+
+        self.get_logger().info('Active scan completed!')
         self._current_wp_idx += 1
         self.send_next_waypoint()
 
