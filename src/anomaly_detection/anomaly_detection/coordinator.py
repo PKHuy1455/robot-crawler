@@ -61,6 +61,8 @@ class AnomalyCoordinator(Node):
         self._state = "COLLECTING"       # COLLECTING, NAVIGATING, WAITING, COMPLETED
         self._home_x = 0.0
         self._home_y = 0.0
+        self._current_x = 0.0
+        self._current_y = 0.0
 
         # ── Publishers ───────────────────────────────────────────────────
         self.pub_cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -81,6 +83,9 @@ class AnomalyCoordinator(Node):
         # Anomaly alerts from YOLO detector
         self.create_subscription(
             String, '/anomaly', self.anomaly_callback, 10)
+        # Robot position from position_bridge
+        self.create_subscription(
+            PointStamped, '/robot_position', self._position_cb, 10)
 
         # ── Nav2 Action Client ───────────────────────────────────────────
         self._nav_client = ActionClient(
@@ -107,6 +112,14 @@ class AnomalyCoordinator(Node):
         msg = Int32MultiArray()
         msg.data = [int(pan), int(tilt)]
         self.pub_servo.publish(msg)
+
+    def _position_cb(self, msg: PointStamped):
+        """Update robot's current position and track it as HOME if still collecting."""
+        self._current_x = msg.point.x
+        self._current_y = msg.point.y
+        if self._state == "COLLECTING":
+            self._home_x = self._current_x
+            self._home_y = self._current_y
 
     # ------------------------------------------------------------------
     # Waypoint collection from RViz
