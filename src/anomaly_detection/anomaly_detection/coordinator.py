@@ -438,15 +438,43 @@ class AnomalyCoordinator(Node):
         t.start()
 
     def _handle_anomaly(self, data):
-        with self._lock:
-            if self.is_paused:
-                return
-            self.is_paused = True
-
         x = data.get('x', 0.0)
         y = data.get('y', 0.0)
         crack_count = data.get('crack_count', 0)
         anomaly_id = data.get('id', '0000')
+
+        # Check if we are currently performing a waypoint scan
+        is_scanning_at_wp = False
+        with self._lock:
+            if self._state == "WAITING":
+                is_scanning_at_wp = True
+
+        if is_scanning_at_wp:
+            # We are scanning at a waypoint. Just record the anomaly.
+            # Avoid changing self.is_paused, canceling goals, or calling send_next_waypoint()
+            for old in self.detected_anomalies:
+                dist = math.sqrt((x - old['x'])**2 + (y - old['y'])**2)
+                if dist < 0.5:
+                    return
+            
+            self.get_logger().warn(
+                f'🚨 ANOMALY detected during Waypoint Scan! pos=({x:.2f},{y:.2f}) cracks={crack_count}')
+            
+            self._add_anomaly_marker(x, y, anomaly_id, crack_count)
+            self.detected_anomalies.append({
+                'id': anomaly_id, 'x': x, 'y': y,
+                'crack_count': crack_count,
+                'timestamp': data.get('timestamp', ''),
+                'class': data.get('class', 'crack'),
+                'confidence': data.get('confidence', 0.0),
+                'image': data.get('image', ''),
+            })
+            return
+
+        with self._lock:
+            if self.is_paused:
+                return
+            self.is_paused = True
 
         # Skip duplicates within 0.5m
         for old in self.detected_anomalies:
@@ -486,6 +514,10 @@ class AnomalyCoordinator(Node):
 
         # 5. Resume
         self.get_logger().info('Resuming navigation...')
+        # Center camera before moving
+        self.send_servo_cmd(85, 70)
+        time.sleep(0.8)
+        
         with self._lock:
             self.is_paused = False
         self.send_next_waypoint()
