@@ -372,35 +372,35 @@ class AnomalyCoordinator(Node):
         
         self.get_logger().info('  [San] Quet giua-xuong (85, 100)...')
         self.send_servo_cmd(85, 100)
-        time.sleep(1.0)
+        time.sleep(1.6) # Xoay 30 deg (~0.6s) + 1.0s dừng quét tĩnh
         
         self.get_logger().info('  [San] Quet trai-xuong (143, 100)...')
         self.send_servo_cmd(143, 100)
-        time.sleep(1.2)
+        time.sleep(2.2) # Xoay 58 deg (~1.2s) + 1.0s dừng quét tĩnh
         
         self.get_logger().info('  [San] Quet phai-xuong (23, 100)...')
         self.send_servo_cmd(23, 100)
-        time.sleep(1.2)
+        time.sleep(3.4) # Xoay 120 deg (~2.4s) + 1.0s dừng quét tĩnh
 
         # --- TẦNG 2: QUÉT KHÔNG GIAN/TƯỜNG (TILT_CENTER = 70) ---
         self.get_logger().info('--- TẦNG 2: QUÉT KHÔNG GIAN (Tim vat can/di thuong) ---')
         
         self.get_logger().info('  [Khong gian] Quet giua-ngang (85, 70)...')
         self.send_servo_cmd(85, 70)
-        time.sleep(1.0)
+        time.sleep(2.2) # Xoay 62 deg (~1.2s) + 1.0s dừng quét tĩnh
         
         self.get_logger().info('  [Khong gian] Quet trai-ngang (143, 70)...')
         self.send_servo_cmd(143, 70)
-        time.sleep(1.2)
+        time.sleep(2.2) # Xoay 58 deg (~1.2s) + 1.0s dừng quét tĩnh
         
         self.get_logger().info('  [Khong gian] Quet phai-ngang (23, 70)...')
         self.send_servo_cmd(23, 70)
-        time.sleep(1.2)
+        time.sleep(3.4) # Xoay 120 deg (~2.4s) + 1.0s dừng quét tĩnh
 
         # --- ĐƯA VỀ VỊ TRÍ MẶC ĐỊNH ---
         self.get_logger().info('Resetting camera to Center (85, 70)...')
         self.send_servo_cmd(85, 70)
-        time.sleep(0.8)
+        time.sleep(2.2) # Xoay 62 deg (~1.2s) + 1.0s dừng quét tĩnh
 
         self.get_logger().info('Active scan completed!')
         self._current_wp_idx += 1
