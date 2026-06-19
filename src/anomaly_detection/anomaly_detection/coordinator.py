@@ -380,34 +380,34 @@ class AnomalyCoordinator(Node):
             f'Starting active Pan-Tilt scan...')
         self._state = "WAITING"
 
-        # --- TẦNG 1: QUÉT SÀN (TILT_DOWN = 100) ---
-        self.get_logger().info('--- TẦNG 1: QUÉT SÀN (Tìm vết nứt) ---')
+        # --- TẦNG 1: QUÉT THÙNG CARTON (TILT_BOX = 85) ---
+        self.get_logger().info('--- TẦNG 1: QUÉT THÙNG CARTON (Tìm vết nứt) ---')
         
-        self.get_logger().info('  [San] Quet giua-xuong (85, 100)...')
-        self.send_servo_cmd(85, 100)
-        time.sleep(1.6) # Xoay 30 deg (~0.6s) + 1.0s dừng quét tĩnh
+        self.get_logger().info('  [Thung] Quet giua-xuong (85, 85)...')
+        self.send_servo_cmd(85, 85)
+        time.sleep(1.3) # Xoay 15 deg (~0.3s) + 1.0s dừng quét tĩnh
         
-        self.get_logger().info('  [San] Quet trai-xuong (143, 100)...')
-        self.send_servo_cmd(143, 100)
+        self.get_logger().info('  [Thung] Quet trai-xuong (143, 85)...')
+        self.send_servo_cmd(143, 85)
         time.sleep(2.2) # Xoay 58 deg (~1.2s) + 1.0s dừng quét tĩnh
         
-        self.get_logger().info('  [San] Quet phai-xuong (23, 100)...')
-        self.send_servo_cmd(23, 100)
+        self.get_logger().info('  [Thung] Quet phai-xuong (23, 85)...')
+        self.send_servo_cmd(23, 85)
         time.sleep(3.4) # Xoay 120 deg (~2.4s) + 1.0s dừng quét tĩnh
 
-        # --- TẦNG 2: QUÉT KHÔNG GIAN/TƯỜNG (TILT_CENTER = 70) ---
-        self.get_logger().info('--- TẦNG 2: QUÉT KHÔNG GIAN (Tim vat can/di thuong) ---')
+        # --- TẦNG 2: QUÉT TẦM TRUNG/TƯỜNG (TILT_WALL = 75) ---
+        self.get_logger().info('--- TẦNG 2: QUÉT TẦM TRUNG/TƯỜNG (Tim vat can/di thuong) ---')
         
-        self.get_logger().info('  [Khong gian] Quet giua-ngang (85, 70)...')
-        self.send_servo_cmd(85, 70)
+        self.get_logger().info('  [Tam trung] Quet giua-ngang (85, 75)...')
+        self.send_servo_cmd(85, 75)
         time.sleep(2.2) # Xoay 62 deg (~1.2s) + 1.0s dừng quét tĩnh
         
-        self.get_logger().info('  [Khong gian] Quet trai-ngang (143, 70)...')
-        self.send_servo_cmd(143, 70)
+        self.get_logger().info('  [Tam trung] Quet trai-ngang (143, 75)...')
+        self.send_servo_cmd(143, 75)
         time.sleep(2.2) # Xoay 58 deg (~1.2s) + 1.0s dừng quét tĩnh
         
-        self.get_logger().info('  [Khong gian] Quet phai-ngang (23, 70)...')
-        self.send_servo_cmd(23, 70)
+        self.get_logger().info('  [Tam trung] Quet phai-ngang (23, 75)...')
+        self.send_servo_cmd(23, 75)
         time.sleep(3.4) # Xoay 120 deg (~2.4s) + 1.0s dừng quét tĩnh
 
         # --- ĐƯA VỀ VỊ TRÍ MẶC ĐỊNH ---
