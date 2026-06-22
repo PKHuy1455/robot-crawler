@@ -1,0 +1,26 @@
+==================================================
+ROBOT INSPECTION FINAL REPORT
+Generated: 20260622_102126
+Waypoints inspected: 3
+==================================================
+
+Waypoint route:
+  WP1: (-5.73, -0.29)
+  WP2: (-1.97, 0.01)
+  WP3: (-3.11, -0.83)
+  HOME: (-7.08, -0.41)
+
+Total anomalies: 2
+
+[1] crack (conf=0.61)
+    Position: (-5.87, -0.34)
+    Cracks:   1
+    Time:     20260622_101659
+    Image:    /home/pi/robot_data/anomalies/crack_0001_20260622_101659_x-5.87_y-0.34.jpg
+
+[2] crack (conf=0.41)
+    Position: (-3.00, -0.77)
+    Cracks:   1
+    Time:     20260622_101932
+    Image:    /home/pi/robot_data/anomalies/crack_0002_20260622_101932_x-3.00_y-0.77.jpg
+
