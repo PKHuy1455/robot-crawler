@@ -69,7 +69,7 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'model_path':           '/home/pi/robot_ws/models/best.pt',
-            'confidence_threshold': 0.40,
+            'confidence_threshold': 0.50,
             'imgsz':                320,
             'cooldown_sec':         8.0,
             'save_dir':             '/home/pi/robot_data/anomalies',
