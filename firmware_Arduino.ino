@@ -208,7 +208,7 @@ int targetTilt = 70;
 int currentPan = 85;
 int currentTilt = 70;
 unsigned long lastServoUpdateTime = 0;
-#define SERVO_UPDATE_INTERVAL_MS 15
+#define SERVO_UPDATE_INTERVAL_MS 20
 
 
 
